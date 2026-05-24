@@ -1,11 +1,13 @@
 from flask import Flask
 from flask_cors import CORS
-
+from extensions import limiter
 from routes.tasks import tasks_bp
 
 app = Flask(__name__)
 
 CORS(app)
+
+limiter.init_app(app)
 
 app.register_blueprint(tasks_bp)
 

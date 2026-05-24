@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -36,29 +37,30 @@ export default function DashboardPage() {
       console.log(error);
     }
   }
- async function updateTaskStatus(taskId: string, status: string) {
-   try {
-     setTasks((prevTasks) =>
-       prevTasks.map((task) =>
-         task.id === taskId ? { ...task, status } : task,
-       ),
-     );
 
-     await fetch(`http://127.0.0.1:5000/api/tasks/${taskId}`, {
-       method: "PATCH",
+  async function updateTaskStatus(taskId: string, status: string) {
+    try {
+      setTasks((prevTasks) =>
+        prevTasks.map((task) =>
+          task.id === taskId ? { ...task, status } : task,
+        ),
+      );
 
-       headers: {
-         "Content-Type": "application/json",
-       },
+      await fetch(`http://127.0.0.1:5000/api/tasks/${taskId}`, {
+        method: "PATCH",
 
-       body: JSON.stringify({
-         status,
-       }),
-     });
-   } catch (error) {
-     console.log(error);
-   }
- }
+        headers: {
+          "Content-Type": "application/json",
+        },
+
+        body: JSON.stringify({
+          status,
+        }),
+      });
+    } catch (error) {
+      console.log(error);
+    }
+  }
 
   if (status === "loading") {
     return <div className="p-10">Loading...</div>;
@@ -70,33 +72,83 @@ export default function DashboardPage() {
 
       <div className="space-y-4">
         {tasks.map((task) => (
-          <div key={task.id} className="border p-4 rounded-lg">
-            <h2 className="text-xl font-semibold">{task.title}</h2>
+          <Link href={`/dashboard/${task.id}`} key={task.id}>
+            <div className="border p-4 rounded-lg cursor-pointer hover:border-black transition">
+              <h2 className="text-xl font-semibold">{task.title}</h2>
 
-            <p className="text-gray-500 mt-2">{task.description}</p>
+              <p className="text-gray-500 mt-2">{task.description}</p>
 
-            <p className="mt-3 text-sm">Status: {task.status}</p>
+              <p className="mt-3 text-sm capitalize">
+                Status: {task.status.replace("_", " ")}
+              </p>
 
-            <div className="mt-4 flex gap-3">
-              {task.status === "assigned" && (
-                <button
-                  onClick={() => updateTaskStatus(task.id, "in_progress")}
-                  className="bg-blue-500 text-white px-4 py-2 rounded-lg"
-                >
-                  Start Task
-                </button>
+              {task.feedback_note && (
+                <div className="mt-4 border border-yellow-500/20 bg-yellow-500/10 rounded-xl p-3">
+                  <p className="text-sm font-medium text-yellow-500">
+                    Admin Feedback
+                  </p>
+
+                  <p className="text-sm mt-1 text-gray-300">
+                    {task.feedback_note}
+                  </p>
+                </div>
               )}
 
-              {task.status === "in_progress" && (
-                <button
-                  onClick={() => updateTaskStatus(task.id, "submitted")}
-                  className="bg-green-500 text-white px-4 py-2 rounded-lg"
-                >
-                  Submit Task
-                </button>
-              )}
+              <div className="mt-4 flex gap-3">
+                {task.status === "assigned" && (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+
+                      updateTaskStatus(task.id, "in_progress");
+                    }}
+                    className="bg-blue-500 text-white px-4 py-2 rounded-lg"
+                  >
+                    Start Task
+                  </button>
+                )}
+
+                {task.status === "in_progress" && (
+                  <button
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+
+                      try {
+                        const res = await fetch(
+                          `http://127.0.0.1:5000/api/tasks/${task.id}/generations`,
+                        );
+
+                        const images = await res.json();
+
+                        if (images.length < 8) {
+                          toast.error(
+                            `Only ${images.length}/8 images generated`,
+                          );
+
+                          return;
+                        }
+
+                        await updateTaskStatus(task.id, "submitted");
+
+                        toast.success("Task submitted successfully!");
+
+                        fetchMyTasks();
+                      } catch (error) {
+                        console.log(error);
+
+                        toast.error("Something went wrong");
+                      }
+                    }}
+                    className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg"
+                  >
+                    Submit Task
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </div>
