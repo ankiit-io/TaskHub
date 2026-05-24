@@ -12,6 +12,8 @@ import { toast } from "sonner";
 
 import { supabase } from "@/lib/supabase";
 
+import StatusBadge from "@/components/StatusBadge";
+
 import {
   AlertTriangle,
   Search,
@@ -202,8 +204,6 @@ export default function AdminPage() {
         throw new Error("Failed to create task");
       }
 
-      toast.success("Task created successfully");
-
       resetForm();
 
       fetchTasks();
@@ -253,8 +253,6 @@ export default function AdminPage() {
         throw new Error("Failed to update task");
       }
 
-      toast.success("Task updated successfully");
-
       resetForm();
 
       fetchTasks();
@@ -273,34 +271,32 @@ export default function AdminPage() {
     setDeleteModal(true);
   }
 
- async function confirmDeleteTask() {
-   try {
-     setTasks((prev) => prev.filter((task) => task.id !== selectedTaskId));
+  async function confirmDeleteTask() {
+    try {
+      setTasks((prev) => prev.filter((task) => task.id !== selectedTaskId));
 
-     setDeleteModal(false);
+      setDeleteModal(false);
 
-     const response = await fetch(
-       `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/tasks/${selectedTaskId}`,
-       {
-         method: "DELETE",
-       },
-     );
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/tasks/${selectedTaskId}`,
+        {
+          method: "DELETE",
+        },
+      );
 
-     if (!response.ok) {
-       throw new Error("Failed to delete task");
-     }
+      if (!response.ok) {
+        throw new Error("Failed to delete task");
+      }
 
-     
+      setSelectedTaskId("");
+    } catch (error) {
+      console.log(error);
 
-     setSelectedTaskId("");
-   } catch (error) {
-     console.log(error);
+      toast.error("Failed to delete task");
 
-     toast.error("Failed to delete task");
-
-     fetchTasks();
-   }
- }
+      fetchTasks();
+    }
+  }
 
   function openEdit(task: any) {
     if (task.status !== "assigned") {
@@ -339,28 +335,6 @@ export default function AdminPage() {
       return matchesSearch && matchesStatus;
     });
   }, [tasks, search, statusFilter]);
-
-  function getStatusStyles(status: string) {
-    switch (status) {
-      case "assigned":
-        return "bg-yellow-500/15 text-yellow-400";
-
-      case "in_progress":
-        return "bg-blue-500/15 text-blue-400";
-
-      case "submitted":
-        return "bg-purple-500/15 text-purple-400";
-
-      case "accepted":
-        return "bg-green-500/15 text-green-400";
-
-      case "revision_requested":
-        return "bg-red-500/15 text-red-400";
-
-      default:
-        return "bg-gray-500/15 text-gray-400";
-    }
-  }
 
   if (loading) {
     return (
@@ -414,12 +388,12 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
+    <div className="space-y-8">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-4xl font-bold">Admin Dashboard</h1>
 
-          <p className="text-gray-400 mt-2">Manage AI workflows.</p>
+          <p className="text-gray-400 mt-2">Manage AI workflows and reviews.</p>
         </div>
 
         <div className="flex gap-3 flex-wrap">
@@ -440,17 +414,30 @@ export default function AdminPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="pl-10 bg-white/5 border border-white/10 rounded-xl h-11 pr-5 outline-none"
+              className="pl-10 bg-[#0F0F10] text-white border border-white/10 rounded-xl h-11 pr-10 outline-none appearance-none hover:border-white/20 transition-all"
+              style={{
+                colorScheme: "dark",
+              }}
             >
-              <option value="all">All</option>
+              <option className="bg-[#0F0F10] text-white" value="all">
+                All
+              </option>
 
-              <option value="assigned">Assigned</option>
+              <option className="bg-[#0F0F10] text-white" value="assigned">
+                Assigned
+              </option>
 
-              <option value="in_progress">In Progress</option>
+              <option className="bg-[#0F0F10] text-white" value="in_progress">
+                In Progress
+                </option>
 
-              <option value="submitted">Submitted</option>
+              <option className="bg-[#0F0F10] text-white" value="submitted">
+                Submitted
+              </option>
 
-              <option value="accepted">Accepted</option>
+              <option className="bg-[#0F0F10] text-white" value="accepted">
+                Accepted
+              </option>
             </select>
           </div>
         </div>
@@ -489,12 +476,21 @@ export default function AdminPage() {
             <select
               value={assignedTo}
               onChange={(e) => setAssignedTo(e.target.value)}
-              className="w-full bg-black/20 border border-white/10 rounded-2xl p-4 outline-none"
+              className="w-full bg-[#0F0F10] text-white border border-white/10 rounded-2xl p-4 outline-none hover:border-white/20 transition-all"
+              style={{
+                colorScheme: "dark",
+              }}
             >
-              <option value="">Select User</option>
+              <option className="bg-[#0F0F10] text-white" value="">
+                Select User
+              </option>
 
               {users.map((user) => (
-                <option key={user.id} value={user.id} className="text-black">
+                <option
+                  key={user.id}
+                  value={user.id}
+                  className="bg-[#0F0F10] text-white"
+                >
                   {user.name} ({user.email})
                 </option>
               ))}
@@ -568,75 +564,121 @@ export default function AdminPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {filteredTasks.map((task) => (
-          <div
-            key={task.id}
-            className="border border-white/10 bg-white/5 rounded-3xl overflow-hidden"
-          >
-            {task.product_image_url && (
-              <img
-                src={task.product_image_url}
-                alt={task.title}
-                className="w-full h-60 object-cover"
-              />
-            )}
-
-            <div className="p-6 space-y-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-semibold">{task.title}</h2>
-
-                  <p className="text-gray-400 mt-2 line-clamp-3">
-                    {task.description}
-                  </p>
-                </div>
-
-                <div
-                  className={`px-4 py-2 rounded-full text-sm capitalize ${getStatusStyles(
-                    task.status,
-                  )}`}
-                >
-                  {task.status.replaceAll("_", " ")}
-                </div>
-              </div>
-
-              <div className="flex gap-3 flex-wrap">
-                {task.status === "assigned" && (
-                  <button
-                    onClick={() => openEdit(task)}
-                    className="h-11 w-11 rounded-xl border border-white/10 hover:bg-white/10 flex items-center justify-center"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                )}
-
-                <button
-                  onClick={() => deleteTask(task.id)}
-                  className="h-11 w-11 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 flex items-center justify-center"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-
-                <Link
-                  href={`/admin/tasks/${task.id}`}
-                  className="bg-white text-black px-5 h-11 rounded-xl flex items-center justify-center font-medium hover:opacity-90"
-                >
-                  Open Task
-                </Link>
-              </div>
-
-              {task.feedback_note && (
-                <div className="border border-yellow-500/20 bg-yellow-500/10 rounded-2xl p-4">
-                  <p className="text-yellow-400 font-medium text-sm">
-                    Admin Remark
-                  </p>
-
-                  <p className="mt-2 text-sm text-gray-300">
-                    {task.feedback_note}
-                  </p>
-                </div>
+          <Link href={`/admin/tasks/${task.id}`} key={task.id}>
+            <div className="border border-white/10 bg-white/5 rounded-3xl overflow-hidden hover:border-white/20 transition-all cursor-pointer">
+              {task.product_image_url && (
+                <img
+                  src={task.product_image_url}
+                  alt={task.title}
+                  className="w-full h-60 object-cover"
+                />
               )}
+
+              <div className="p-6 space-y-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-2xl font-semibold">{task.title}</h2>
+
+                    <p className="text-gray-400 mt-2 line-clamp-3">
+                      {task.description}
+                    </p>
+                  </div>
+
+                  <StatusBadge status={task.status} />
+                </div>
+
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    {task.assigned_user?.avatar ? (
+                      <img
+                        src={task.assigned_user.avatar}
+                        alt="avatar"
+                        className="h-14 w-14 rounded-full object-cover border border-white/10"
+                      />
+                    ) : (
+                      <div className="h-14 w-14 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-lg font-semibold border border-white/10">
+                        {task.assigned_user?.name?.charAt(0) || "U"}
+                      </div>
+                    )}
+
+                    <div>
+                      <p className="text-sm text-gray-400">Assigned To</p>
+
+                      <p className="font-medium text-lg">
+                        {task.assigned_user?.name || "Unknown User"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400">Progress</p>
+
+                    <p className="font-medium">
+                      {Math.min(
+                        Math.round(((task.generated_count || 0) / 8) * 100),
+                        100,
+                      )}
+                      %
+                    </p>
+                  </div>
+                </div>
+
+                <div className="h-3 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full bg-green-500 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(
+                        ((task.generated_count || 0) / 8) * 100,
+                        100,
+                      )}%`,
+                    }}
+                  />
+                </div>
+
+                <div className="flex gap-3 flex-wrap">
+                  {task.status === "assigned" && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+
+                        e.stopPropagation();
+
+                        openEdit(task);
+                      }}
+                      className="h-11 w-11 rounded-xl border border-white/10 hover:bg-white/10 flex items-center justify-center"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  )}
+
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+
+                      e.stopPropagation();
+
+                      deleteTask(task.id);
+                    }}
+                    className="h-11 w-11 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-500/10 flex items-center justify-center"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {task.feedback_note && (
+                  <div className="border border-yellow-500/20 bg-yellow-500/10 rounded-2xl p-4">
+                    <p className="text-yellow-400 font-medium text-sm">
+                      Admin Remark
+                    </p>
+
+                    <p className="mt-2 text-sm text-gray-300">
+                      {task.feedback_note}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
 

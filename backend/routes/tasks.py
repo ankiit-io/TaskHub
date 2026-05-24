@@ -118,7 +118,7 @@ def save_user():
             json={
     "name": name,
     "email": email,
-    "avatar": data.get("image"),
+    "avatar_url": data.get("image"),
     "provider": data.get("provider"),
     "oauth_id": data.get("oauth_id"),
     "role": (
@@ -150,7 +150,15 @@ def get_user_by_email(email):
             "role": "user"
         }), 404
 
-    return jsonify(users[0]), 200
+    user = users[0]
+
+    if user.get("display_name"):
+     user["name"] = user["display_name"]
+
+    if user.get("avatar_url"):
+     user["avatar"] = user["avatar_url"]
+
+    return jsonify(user), 200
 
 
 @tasks_bp.route("/api/tasks", methods=["POST"])
@@ -213,8 +221,64 @@ def get_tasks():
         headers=HEADERS
     )
 
+    tasks = response.json()
+
+    formatted_tasks = []
+
+    for task in tasks:
+
+        # ASSIGNED USER
+
+        assigned_user = None
+
+        if task.get("assigned_to"):
+
+            user_response = requests.get(
+                (
+                    f"{SUPABASE_URL}/rest/v1/users"
+                    f"?id=eq.{task['assigned_to']}&select=*"
+                ),
+                headers=HEADERS
+            )
+
+            user_data = user_response.json()
+
+            if len(user_data) > 0:
+
+                assigned_user = {
+                    "id": user_data[0]["id"],
+                    "name": user_data[0]["name"],
+                    "email": user_data[0]["email"],
+                    "avatar": (
+    user_data[0].get("avatar_url")
+    or user_data[0].get("avatar")
+),
+                }
+
+        # GENERATED IMAGES COUNT
+
+        generations_response = requests.get(
+            (
+                f"{SUPABASE_URL}/rest/v1/generated_images"
+                f"?task_id=eq.{task['id']}&select=id"
+            ),
+            headers=HEADERS
+        )
+
+        generated_count = len(
+            generations_response.json()
+        )
+
+        formatted_tasks.append({
+            **task,
+
+            "assigned_user": assigned_user,
+
+            "generated_count": generated_count
+        })
+
     return jsonify({
-        "tasks": response.json()
+        "tasks": formatted_tasks
     }), 200
 
 
@@ -246,8 +310,31 @@ def get_my_tasks(user_id):
         headers=HEADERS
     )
 
+    tasks = response.json()
+
+    formatted_tasks = []
+
+    for task in tasks:
+
+        generations_response = requests.get(
+            (
+                f"{SUPABASE_URL}/rest/v1/generated_images"
+                f"?task_id=eq.{task['id']}&select=id"
+            ),
+            headers=HEADERS
+        )
+
+        generated_count = len(
+            generations_response.json()
+        )
+
+        formatted_tasks.append({
+            **task,
+            "generated_count": generated_count
+        })
+
     return jsonify({
-        "tasks": response.json()
+        "tasks": formatted_tasks
     }), 200
 
 
@@ -797,3 +884,31 @@ def delete_task(task_id):
         return jsonify({
             "error": str(e)
         }), 500
+        
+@tasks_bp.route("/api/users/<user_id>", methods=["PUT"])
+def update_user_profile(user_id):
+
+    data = request.get_json()
+
+    response = requests.patch(
+        f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
+        headers={
+            **HEADERS,
+            "Prefer": "return=representation"
+        },
+        json={
+            "display_name": data.get("display_name"),
+"name": data.get("display_name"),
+            "avatar_url": data.get("avatar_url")
+        }
+    )
+
+    updated_user = response.json()
+
+    if len(updated_user) == 0:
+
+        return jsonify({
+            "error": "User not found"
+        }), 404
+
+    return jsonify(updated_user[0]), 200

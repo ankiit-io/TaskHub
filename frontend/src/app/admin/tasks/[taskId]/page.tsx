@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+
 import { useParams, useRouter } from "next/navigation";
+
 import { toast } from "sonner";
+
+import StatusBadge from "@/components/StatusBadge";
+
+import ImageViewer from "@/components/ImageViewer";
+
+import { Check, Maximize2, RotateCcw, Trash2 } from "lucide-react";
 
 interface Task {
   id: string;
@@ -37,7 +45,9 @@ export default function AdminTaskReviewPage() {
 
   const [submitting, setSubmitting] = useState(false);
 
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     fetchTask();
@@ -85,6 +95,8 @@ export default function AdminTaskReviewPage() {
     };
   }, [generations]);
 
+  const allImages = generations.map((img) => img.image_url);
+
   async function acceptTask() {
     try {
       setSubmitting(true);
@@ -105,20 +117,17 @@ export default function AdminTaskReviewPage() {
       );
 
       if (!res.ok) {
-        toast.error("Failed to accept task");
-
-        return;
+        throw new Error();
       }
 
-      toast.success("Task accepted successfully!");
-
-      fetchTask();
-
-      router.refresh();
+      setTask((prev: any) => ({
+        ...prev,
+        status: "accepted",
+      }));
     } catch (error) {
       console.log(error);
 
-      toast.error("Something went wrong");
+      toast.error("Failed to accept task");
     } finally {
       setSubmitting(false);
     }
@@ -144,65 +153,149 @@ export default function AdminTaskReviewPage() {
       );
 
       if (!res.ok) {
-        toast.error("Failed to request revision");
-
-        return;
+        throw new Error();
       }
 
-      toast.success("Revision requested!");
-
-      fetchTask();
-
-      router.refresh();
+      setTask((prev: any) => ({
+        ...prev,
+        status: "revision_requested",
+      }));
     } catch (error) {
       console.log(error);
 
-      toast.error("Something went wrong");
+      toast.error("Failed to request revision");
     } finally {
       setSubmitting(false);
     }
   }
 
+  async function makeFinal(imageId: string) {
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/generations/${imageId}/final`,
+        {
+          method: "PUT",
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error();
+      }
+
+      setGenerations((prev) =>
+        prev.map((img) => ({
+          ...img,
+          is_final: img.id === imageId,
+        })),
+      );
+    } catch (error) {
+      console.log(error);
+
+      toast.error("Failed to update final image");
+    }
+  }
+
+  async function deleteTask() {
+    try {
+      router.push("/admin");
+
+      await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/tasks/${taskId}`,
+        {
+          method: "DELETE",
+        },
+      );
+    } catch (error) {
+      console.log(error);
+
+      toast.error("Failed to delete task");
+    }
+  }
+
   function renderImageSection(title: string, images: Generation[]) {
     return (
-      <div className="border border-white/10 bg-white/5 rounded-2xl p-5">
-        <h2 className="text-2xl font-semibold mb-5">{title}</h2>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-3xl font-bold">{title}</h2>
+
+          <div className="text-sm text-gray-400">{images.length} images</div>
+        </div>
 
         {images.length === 0 ? (
-          <div className="text-gray-500 py-8 text-center border border-dashed border-white/10 rounded-xl">
+          <div className="border border-dashed border-white/10 rounded-3xl p-16 text-center text-gray-500 bg-white/5">
             No images available
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-            {images.map((image) => (
-              <div
-                key={image.id}
-                className={`border rounded-2xl overflow-hidden transition-all duration-200 hover:border-gray-500 ${
-                  image.is_final
-                    ? "border-green-500 ring-2 ring-green-500/30"
-                    : "border-white/10"
-                }`}
-              >
-                <img
-                  src={image.image_url}
-                  alt={image.image_type}
-                  onClick={() => setSelectedImage(image.image_url)}
-                  className="w-full h-64 object-cover cursor-pointer hover:scale-[1.01] transition-all duration-300"
-                />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {images.map((image) => {
+              const globalIndex = allImages.indexOf(image.image_url);
 
-                <div className="p-4">
-                  <p className="font-medium capitalize">
-                    {image.image_type.replaceAll("_", " ")}
-                  </p>
+              return (
+                <div
+                  key={image.id}
+                  className={`group border rounded-3xl overflow-hidden bg-white/5 transition-all duration-300 ${
+                    image.is_final
+                      ? "border-green-500 ring-2 ring-green-500/20"
+                      : "border-white/10 hover:border-white/20"
+                  }`}
+                >
+                  <div className="relative">
+                    <img
+                      src={image.image_url}
+                      alt={image.image_type}
+                      className="w-full h-72 object-cover"
+                    />
 
-                  {image.is_final && (
-                    <div className="mt-2 inline-flex items-center rounded-full bg-green-500/15 px-3 py-1 text-sm text-green-400">
-                      Final Selected
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300" />
+
+                    <div className="absolute top-4 right-4 flex gap-2">
+                      <button
+                        onClick={() => {
+                          setCurrentIndex(globalIndex);
+
+                          setViewerOpen(true);
+                        }}
+                        className="h-11 w-11 rounded-xl bg-black/70 backdrop-blur-sm hover:bg-black flex items-center justify-center"
+                      >
+                        <Maximize2 className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        onClick={() => makeFinal(image.id)}
+                        className={`h-11 px-4 rounded-xl backdrop-blur-sm flex items-center gap-2 ${
+                          image.is_final
+                            ? "bg-green-500 text-white"
+                            : "bg-black/70 hover:bg-black"
+                        }`}
+                      >
+                        <Check className="h-4 w-4" />
+                        Final
+                      </button>
                     </div>
-                  )}
+                  </div>
+
+                  <div className="p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold capitalize">
+                          {image.image_type.replaceAll("_", " ")}
+                        </p>
+
+                        <p className="text-sm text-gray-400 mt-1">
+                          AI Generated Image
+                        </p>
+                      </div>
+
+                      {image.is_final && (
+                        <div className="h-11 w-11 rounded-full bg-green-500/15 text-green-400 flex items-center justify-center">
+                          <Check className="h-5 w-5" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -211,85 +304,91 @@ export default function AdminTaskReviewPage() {
 
   if (loading) {
     return (
-      <div className="p-10">
-        <div className="animate-pulse space-y-5">
-          <div className="h-10 w-64 bg-white/10 rounded-xl"></div>
+      <div className="space-y-8 animate-pulse">
+        <div className="h-12 w-72 rounded-2xl bg-white/10"></div>
 
-          <div className="h-32 bg-white/10 rounded-2xl"></div>
+        <div className="h-52 rounded-3xl bg-white/5 border border-white/10"></div>
 
-          <div className="h-96 bg-white/10 rounded-2xl"></div>
+        <div className="grid grid-cols-3 gap-5">
+          <div className="h-32 rounded-3xl bg-white/5 border border-white/10"></div>
+
+          <div className="h-32 rounded-3xl bg-white/5 border border-white/10"></div>
+
+          <div className="h-32 rounded-3xl bg-white/5 border border-white/10"></div>
         </div>
       </div>
     );
   }
 
   if (!task) {
-    return <div className="p-10 text-center text-red-500">Task not found</div>;
+    return <div className="text-center text-red-500 py-20">Task not found</div>;
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-        <div>
-          <h1 className="text-4xl font-bold">{task.title}</h1>
+    <div className="space-y-10">
+      <div className="grid lg:grid-cols-[1.3fr_420px] gap-8">
+        <div className="space-y-6">
+          <div className="space-y-5">
+            <StatusBadge status={task.status} />
 
-          <p className="text-gray-400 mt-3 max-w-3xl">{task.description}</p>
+            <div>
+              <h1 className="text-5xl font-bold leading-tight">{task.title}</h1>
 
-          <div className="mt-5">
-            <span
-              className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-medium capitalize ${
-                task.status === "submitted"
-                  ? "bg-blue-500/15 text-blue-400"
-                  : task.status === "accepted"
-                    ? "bg-green-500/15 text-green-400"
-                    : task.status === "revision_requested"
-                      ? "bg-yellow-500/15 text-yellow-400"
-                      : "bg-gray-500/15 text-gray-300"
-              }`}
-            >
-              {task.status.replaceAll("_", " ")}
-            </span>
+              <p className="text-lg text-gray-400 mt-5 max-w-4xl leading-relaxed">
+                {task.description}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="border border-white/10 bg-white/5 rounded-3xl p-6">
+              <p className="text-sm text-gray-400">Total Images</p>
+
+              <h2 className="text-4xl font-bold mt-3">{generations.length}</h2>
+            </div>
+
+            <div className="border border-white/10 bg-white/5 rounded-3xl p-6">
+              <p className="text-sm text-gray-400">Final Selected</p>
+
+              <h2 className="text-4xl font-bold mt-3">
+                {generations.filter((img) => img.is_final).length}
+              </h2>
+            </div>
+
+            <div className="border border-white/10 bg-white/5 rounded-3xl p-6">
+              <p className="text-sm text-gray-400">Completion</p>
+
+              <h2 className="text-4xl font-bold mt-3">
+                {Math.min(Math.round((generations.length / 8) * 100), 100)}%
+              </h2>
+
+              <div className="h-3 rounded-full bg-white/10 overflow-hidden mt-4">
+                <div
+                  className="h-full bg-green-500 rounded-full"
+                  style={{
+                    width: `${Math.min((generations.length / 8) * 100, 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="border border-white/10 bg-white/5 rounded-2xl p-4">
-          <p className="text-sm text-gray-400 mb-3">Original Product</p>
+        <div className="border border-white/10 bg-white/5 rounded-[32px] overflow-hidden h-fit sticky top-24">
+          <div className="p-5 border-b border-white/10">
+            <p className="text-sm text-gray-400">Original Product</p>
+
+            <h2 className="text-2xl font-bold mt-2">Reference Image</h2>
+          </div>
 
           <img
             src={task.product_image_url}
             alt="Original Product"
-            className="w-64 rounded-xl border border-white/10"
+            className="w-full aspect-square object-cover"
           />
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="border border-white/10 bg-white/5 rounded-2xl p-5">
-          <p className="text-sm text-gray-400">Total Images</p>
-
-          <h2 className="text-3xl font-bold mt-2">{generations.length}</h2>
-        </div>
-
-        <div className="border border-white/10 bg-white/5 rounded-2xl p-5">
-          <p className="text-sm text-gray-400">Final Selected</p>
-
-          <h2 className="text-3xl font-bold mt-2">
-            {generations.filter((img) => img.is_final).length}
-          </h2>
-        </div>
-
-        <div className="border border-white/10 bg-white/5 rounded-2xl p-5">
-          <p className="text-sm text-gray-400">Completion</p>
-
-          <h2 className="text-3xl font-bold mt-2">
-            {Math.min(Math.round((generations.length / 8) * 100), 100)}%
-          </h2>
-        </div>
-      </div>
-
-      {/* Image Sections */}
       {renderImageSection("White Background", groupedImages.white)}
 
       {renderImageSection("Theme Backgrounds", groupedImages.theme)}
@@ -298,24 +397,26 @@ export default function AdminTaskReviewPage() {
 
       {renderImageSection("Model Images", groupedImages.model)}
 
-      {/* Feedback */}
-      <div className="border border-white/10 bg-white/5 rounded-2xl p-6">
-        <h2 className="text-2xl font-semibold mb-4">Review Feedback</h2>
+      <div className="border border-white/10 bg-white/5 rounded-[32px] p-7 space-y-5">
+        <div>
+          <h2 className="text-3xl font-bold">Review Feedback</h2>
+
+          <p className="text-gray-400 mt-2">Add remarks or revision notes</p>
+        </div>
 
         <textarea
           value={feedbackNote}
           onChange={(e) => setFeedbackNote(e.target.value)}
-          placeholder="Add review feedback for the user..."
-          className="w-full min-h-[160px] rounded-2xl border border-white/10 bg-black/20 p-5 outline-none focus:border-white/20"
+          placeholder="Add review feedback..."
+          className="w-full min-h-[180px] rounded-3xl border border-white/10 bg-black/20 p-6 outline-none focus:border-white/20"
         />
       </div>
 
-      {/* Actions */}
       <div className="flex flex-wrap gap-4">
         <button
           disabled={submitting}
           onClick={acceptTask}
-          className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-2xl transition-all duration-200 active:scale-95"
+          className="h-14 px-7 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-semibold"
         >
           {submitting ? "Processing..." : "Accept Task"}
         </button>
@@ -323,25 +424,38 @@ export default function AdminTaskReviewPage() {
         <button
           disabled={submitting}
           onClick={requestRevision}
-          className="bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-2xl transition-all duration-200 active:scale-95"
+          className="h-14 px-7 rounded-2xl bg-yellow-500 hover:bg-yellow-600 text-white font-semibold flex items-center gap-2"
         >
-          {submitting ? "Processing..." : "Request Revision"}
+          <RotateCcw className="h-5 w-5" />
+          Request Revision
+        </button>
+
+        <button
+          onClick={deleteTask}
+          className="h-14 px-7 rounded-2xl border border-red-500/20 text-red-400 hover:bg-red-500/10 font-semibold flex items-center gap-2"
+        >
+          <Trash2 className="h-5 w-5" />
+          Delete Task
         </button>
       </div>
 
-      {/* Fullscreen Modal */}
-      {selectedImage && (
-        <div
-          onClick={() => setSelectedImage(null)}
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-6"
-        >
-          <img
-            src={selectedImage}
-            alt="Preview"
-            className="max-w-6xl max-h-[90vh] rounded-2xl"
-          />
-        </div>
-      )}
+      <ImageViewer
+        open={viewerOpen}
+        image={allImages[currentIndex]}
+        images={allImages}
+        currentIndex={currentIndex}
+        onClose={() => setViewerOpen(false)}
+        onNext={() =>
+          setCurrentIndex((prev) =>
+            prev === allImages.length - 1 ? 0 : prev + 1,
+          )
+        }
+        onPrev={() =>
+          setCurrentIndex((prev) =>
+            prev === 0 ? allImages.length - 1 : prev - 1,
+          )
+        }
+      />
     </div>
   );
 }

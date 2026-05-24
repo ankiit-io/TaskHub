@@ -1,9 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+
 import { toast } from "sonner";
 
 import GallerySkeleton from "@/components/skeletons/GallerySkeleton";
+import ImageViewer from "@/components/ImageViewer";
+import StatusBadge from "@/components/StatusBadge";
+
+import {
+  Check,
+  ImageIcon,
+  Maximize2,
+  Sparkles,
+  Trash2,
+  Wand2,
+  X,
+} from "lucide-react";
 
 interface AIStudioProps {
   taskId: string;
@@ -43,7 +56,9 @@ export default function AIStudio({
 
   const [submitting, setSubmitting] = useState(false);
 
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   const isLocked = taskStatus === "submitted" || taskStatus === "accepted";
 
@@ -81,6 +96,10 @@ export default function AIStudio({
     generatedTypes.includes(type),
   ).length;
 
+  const progressPercent = Math.min(Math.round((progress / 8) * 100), 100);
+
+  const imageUrls = generations.map((img) => img.image_url);
+
   const pollJobStatus = (jobId: string) => {
     const interval = setInterval(async () => {
       try {
@@ -96,8 +115,6 @@ export default function AIStudio({
           setLoadingType(null);
 
           fetchGenerations();
-
-          toast.success("Image generated successfully!");
         }
 
         if (data.status === "failed") {
@@ -158,7 +175,7 @@ export default function AIStudio({
     setGenerations((prev) =>
       prev.map((image) => ({
         ...image,
-        is_final: image.id === generationId,
+        is_final: image.id === generationId ? !image.is_final : false,
       })),
     );
 
@@ -169,8 +186,6 @@ export default function AIStudio({
           method: "PATCH",
         },
       );
-
-      toast.success("Final image selected");
     } catch (error) {
       console.log(error);
     }
@@ -190,8 +205,6 @@ export default function AIStudio({
           method: "DELETE",
         },
       );
-
-      toast.success("Image deleted");
     } catch (error) {
       console.log(error);
 
@@ -238,8 +251,6 @@ export default function AIStudio({
         return;
       }
 
-      toast.success("Task submitted successfully!");
-
       window.location.reload();
     } catch (error) {
       console.log(error);
@@ -257,10 +268,10 @@ export default function AIStudio({
       <button
         disabled={!!loadingType || isLocked}
         onClick={() => generateImages(type)}
-        className={`px-4 py-2 rounded-xl text-white transition-all duration-200 active:scale-95 ${
+        className={`h-12 px-5 rounded-2xl transition-all duration-200 font-medium ${
           exists
-            ? "bg-green-600 hover:bg-green-700"
-            : "bg-black hover:bg-gray-700"
+            ? "bg-green-600 hover:bg-green-700 text-white"
+            : "border border-white/10 bg-white/5 hover:bg-white/10"
         } disabled:opacity-50 disabled:cursor-not-allowed`}
       >
         {loadingType === type ? "Generating..." : exists ? `✓ ${label}` : label}
@@ -269,21 +280,88 @@ export default function AIStudio({
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Product Preview */}
-      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-5">
-        <h2 className="text-2xl font-semibold mb-5">Product Preview</h2>
+    <div className="space-y-8">
+      <div className="grid lg:grid-cols-[1.2fr_420px] gap-8">
+        <div className="space-y-6">
+          <div className="flex items-center gap-4 flex-wrap">
+            <StatusBadge status={taskStatus} />
 
-        <img
-          src={productImage}
-          alt="Product"
-          className="w-72 rounded-2xl border border-white/10"
-        />
+            <div className="text-sm text-gray-400">AI Workflow Task</div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="border border-white/10 bg-white/5 rounded-3xl p-6">
+              <p className="text-sm text-gray-400">Progress</p>
+
+              <h2 className="text-4xl font-bold mt-3">{progressPercent}%</h2>
+
+              <div className="h-3 rounded-full bg-white/10 overflow-hidden mt-4">
+                <div
+                  className="h-full bg-green-500 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${progressPercent}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="border border-white/10 bg-white/5 rounded-3xl p-6">
+              <p className="text-sm text-gray-400">Generated Images</p>
+
+              <h2 className="text-4xl font-bold mt-3">{generations.length}</h2>
+            </div>
+
+            <div className="border border-white/10 bg-white/5 rounded-3xl p-6">
+              <p className="text-sm text-gray-400">Final Selected</p>
+
+              <h2 className="text-4xl font-bold mt-3">
+                {generations.filter((img) => img.is_final).length}
+              </h2>
+            </div>
+          </div>
+        </div>
+
+        <div className="border border-white/10 bg-white/5 rounded-[32px] overflow-hidden h-fit sticky top-24">
+          <div className="p-5 border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-2xl bg-blue-500/10 flex items-center justify-center">
+                <ImageIcon className="h-6 w-6 text-blue-400" />
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-400">Original Product</p>
+
+                <h2 className="text-2xl font-bold mt-1">Reference Image</h2>
+              </div>
+            </div>
+          </div>
+
+          <img
+            src={productImage}
+            alt="Product"
+            className="w-full aspect-square object-cover"
+          />
+        </div>
       </div>
 
-      {/* Generate Controls */}
-      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-5">
-        <h2 className="text-2xl font-semibold mb-5">Generate Images</h2>
+      <div className="border border-white/10 bg-white/5 rounded-[32px] p-6 space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 className="text-3xl font-bold">Generate Images</h2>
+
+            <p className="text-gray-400 mt-2">
+              Create AI-generated variations for this product.
+            </p>
+          </div>
+
+          {loadingType && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-blue-500/10 border border-blue-500/20">
+              <div className="h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+
+              <p className="text-sm text-blue-400">AI generating image...</p>
+            </div>
+          )}
+        </div>
 
         <div className="flex flex-wrap gap-3">
           {renderGenerateButton("White BG", "white_bg")}
@@ -302,139 +380,177 @@ export default function AIStudio({
 
           {renderGenerateButton("Model Closeup", "model_closeup")}
         </div>
-
-        {loadingType && (
-          <div className="mt-5 flex items-center gap-3">
-            <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
-
-            <p className="text-sm text-gray-400">Generating AI image...</p>
-          </div>
-        )}
       </div>
 
-      {/* Progress */}
-      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-2xl font-semibold">Progress</h2>
+      <div className="border border-white/10 bg-white/5 rounded-[32px] p-6 space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 className="text-3xl font-bold">Workflow Checklist</h2>
 
-          <span className="text-lg font-medium">{progress}/8</span>
+            <p className="text-gray-400 mt-2">
+              Complete all required generations before submitting.
+            </p>
+          </div>
+
+          <div className="px-4 py-2 rounded-2xl bg-green-500/10 border border-green-500/20 text-green-400 font-medium">
+            {progress}/8 Completed
+          </div>
         </div>
 
-        <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
-          <div
-            className="bg-green-500 h-full transition-all duration-500"
-            style={{
-              width: `${(progress / 8) * 100}%`,
-            }}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           {REQUIRED_TYPES.map((type) => {
             const completed = generatedTypes.includes(type);
 
             return (
               <div
                 key={type}
-                className={`rounded-xl border p-3 ${
+                className={`rounded-2xl border p-4 transition-all ${
                   completed
                     ? "border-green-500/30 bg-green-500/10"
-                    : "border-white/10 bg-white/5"
+                    : "border-white/10 bg-black/20"
                 }`}
               >
-                <p className="capitalize text-sm">
-                  {completed ? "✅" : "❌"} {type.replaceAll("_", " ")}
+                <div className="flex items-center justify-between">
+                  <div className="h-11 w-11 rounded-2xl bg-white/10 flex items-center justify-center">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+
+                  <div
+                    className={`text-sm font-medium ${
+                      completed ? "text-green-400" : "text-gray-400"
+                    }`}
+                  >
+                    {completed ? "Done" : "Pending"}
+                  </div>
+                </div>
+
+                <p className="mt-4 font-medium capitalize">
+                  {type.replaceAll("_", " ")}
                 </p>
               </div>
             );
           })}
         </div>
 
-        <div className="mt-6">
-          <button
-            disabled={missingTypes.length > 0 || submitting || isLocked}
-            onClick={submitTask}
-            className={`px-5 py-3 rounded-2xl text-white transition-all duration-200 active:scale-95 ${
-              missingTypes.length > 0 || submitting || isLocked
-                ? "bg-gray-500 cursor-not-allowed"
-                : "bg-green-600 hover:bg-green-700"
-            }`}
-          >
-            {taskStatus === "submitted"
-              ? "Submitted"
-              : taskStatus === "accepted"
-                ? "Accepted"
-                : submitting
-                  ? "Submitting..."
-                  : "Submit Task"}
-          </button>
-        </div>
+        <button
+          disabled={missingTypes.length > 0 || submitting || isLocked}
+          onClick={submitTask}
+          className={`h-14 px-7 rounded-2xl font-semibold transition-all ${
+            missingTypes.length > 0 || submitting || isLocked
+              ? "bg-gray-500 cursor-not-allowed text-white"
+              : "bg-green-600 hover:bg-green-700 text-white"
+          }`}
+        >
+          {taskStatus === "submitted"
+            ? "Submitted"
+            : taskStatus === "accepted"
+              ? "Accepted"
+              : submitting
+                ? "Submitting..."
+                : "Submit Task"}
+        </button>
       </div>
 
-      {/* Gallery */}
-      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-5">
-        <h2 className="text-2xl font-semibold mb-5">Generated Gallery</h2>
+      <div className="border border-white/10 bg-white/5 rounded-[32px] p-6">
+        <div className="flex items-center justify-between flex-wrap gap-4 mb-8">
+          <div>
+            <h2 className="text-3xl font-bold">Generated Gallery</h2>
+
+            <p className="text-gray-400 mt-2">
+              AI-generated outputs for this workflow.
+            </p>
+          </div>
+
+          <div className="text-sm text-gray-400">
+            {generations.length} images
+          </div>
+        </div>
 
         {galleryLoading ? (
           <GallerySkeleton />
         ) : generations.length === 0 ? (
-          <div className="py-16 text-center text-gray-500 border border-dashed border-white/10 rounded-2xl">
+          <div className="py-20 text-center text-gray-500 border border-dashed border-white/10 rounded-3xl">
+            <Wand2 className="h-12 w-12 mx-auto mb-5 text-gray-500" />
             Generate AI images to start building your gallery.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-            {generations.map((image) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {generations.map((image, index) => (
               <div
                 key={image.id}
-                className={`group border rounded-2xl overflow-hidden transition-all duration-200 hover:border-gray-500 ${
+                className={`group border rounded-3xl overflow-hidden bg-white/5 transition-all duration-300 ${
                   image.is_final
-                    ? "border-green-500 ring-2 ring-green-500/30"
-                    : "border-white/10"
+                    ? "border-green-500 ring-2 ring-green-500/20"
+                    : "border-white/10 hover:border-white/20"
                 }`}
               >
-                <img
-                  src={image.image_url}
-                  alt={image.image_type}
-                  onClick={() => setSelectedImage(image.image_url)}
-                  className="w-full h-64 object-cover cursor-pointer group-hover:scale-[1.02] transition-all duration-300"
-                />
+                <div className="relative">
+                  <img
+                    src={image.image_url}
+                    alt={image.image_type}
+                    className="w-full h-72 object-cover"
+                  />
 
-                <div className="p-4">
-                  <p className="font-medium capitalize">
-                    {image.image_type.replaceAll("_", " ")}
-                  </p>
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300" />
 
-                  {image.is_final && (
-                    <p className="text-green-500 text-sm mt-2">
-                      Final Selected
-                    </p>
-                  )}
+                  <div className="absolute top-4 right-4 flex gap-2">
+                    <button
+                      onClick={() => {
+                        setCurrentIndex(index);
 
-                  <div className="flex gap-2 mt-4">
+                        setViewerOpen(true);
+                      }}
+                      className="h-11 w-11 rounded-xl bg-black/70 backdrop-blur-sm hover:bg-black flex items-center justify-center"
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                    </button>
+
                     <button
                       disabled={isLocked}
                       onClick={() => markAsFinal(image.id)}
-                      className={`px-3 py-2 rounded-lg text-sm transition-all duration-200 active:scale-95 ${
+                      className={`h-11 px-4 rounded-xl backdrop-blur-sm flex items-center gap-2 ${
                         image.is_final
-                          ? "bg-green-600 text-white"
-                          : "bg-gray-800 hover:bg-gray-700 text-white"
+                          ? "bg-green-500 text-white"
+                          : "bg-black/70 hover:bg-black"
                       }`}
                     >
-                      {image.is_final ? "Final Selected" : "Mark Final"}
-                    </button>
-
-                    <button
-                      disabled={isLocked}
-                      onClick={() => deleteGeneration(image.id)}
-                      className={`px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
-                        isLocked
-                          ? "bg-gray-500 cursor-not-allowed text-white"
-                          : "bg-red-500 hover:bg-red-600 active:scale-95 text-white"
-                      }`}
-                    >
-                      Delete
+                      <Check className="h-4 w-4" />
+                      Final
                     </button>
                   </div>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold capitalize">
+                        {image.image_type.replaceAll("_", " ")}
+                      </p>
+
+                      <p className="text-sm text-gray-400 mt-1">
+                        AI Generated Image
+                      </p>
+                    </div>
+
+                    {image.is_final && (
+                      <div className="h-11 w-11 rounded-full bg-green-500/15 text-green-400 flex items-center justify-center">
+                        <Check className="h-5 w-5" />
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    disabled={isLocked}
+                    onClick={() => deleteGeneration(image.id)}
+                    className={`h-11 w-full rounded-2xl transition-all font-medium flex items-center justify-center gap-2 ${
+                      isLocked
+                        ? "bg-gray-500 cursor-not-allowed text-white"
+                        : "bg-red-500 hover:bg-red-600 text-white"
+                    }`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Image
+                  </button>
                 </div>
               </div>
             ))}
@@ -442,19 +558,23 @@ export default function AIStudio({
         )}
       </div>
 
-      {/* Fullscreen Preview */}
-      {selectedImage && (
-        <div
-          onClick={() => setSelectedImage(null)}
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-6"
-        >
-          <img
-            src={selectedImage}
-            alt="Preview"
-            className="max-w-6xl max-h-[90vh] rounded-2xl"
-          />
-        </div>
-      )}
+      <ImageViewer
+        open={viewerOpen}
+        image={imageUrls[currentIndex]}
+        images={imageUrls}
+        currentIndex={currentIndex}
+        onClose={() => setViewerOpen(false)}
+        onNext={() =>
+          setCurrentIndex((prev) =>
+            prev === imageUrls.length - 1 ? 0 : prev + 1,
+          )
+        }
+        onPrev={() =>
+          setCurrentIndex((prev) =>
+            prev === 0 ? imageUrls.length - 1 : prev - 1,
+          )
+        }
+      />
     </div>
   );
 }
