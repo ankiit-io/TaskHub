@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, send_from_directory
+from flask import Blueprint, request, jsonify
 import threading
 import uuid
 import requests
@@ -80,14 +80,6 @@ PROMPTS = {
     )
 }
 
-@tasks_bp.route("/generated/<filename>")
-def serve_generated_image(filename):
-
-    return send_from_directory(
-        "generated",
-        filename
-    )
-
 
 def create_audit_log(action, task_id, user_id=None):
 
@@ -101,6 +93,64 @@ def create_audit_log(action, task_id, user_id=None):
             "table_name": "tasks"
         }
     )
+
+
+@tasks_bp.route("/api/save-user", methods=["POST"])
+def save_user():
+
+    data = request.get_json()
+
+    name = data.get("name")
+    email = data.get("email")
+
+    response = requests.get(
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{email}&select=*",
+        headers=HEADERS
+    )
+
+    existing_users = response.json()
+
+    if len(existing_users) == 0:
+
+        requests.post(
+            f"{SUPABASE_URL}/rest/v1/users",
+            headers=HEADERS,
+            json={
+    "name": name,
+    "email": email,
+    "avatar": data.get("image"),
+    "provider": data.get("provider"),
+    "oauth_id": data.get("oauth_id"),
+    "role": (
+        "admin"
+        if email == "ankitrajpurohit10875@gmail.com"
+        else "user"
+    )
+}
+        )
+
+    return jsonify({
+        "message": "User saved successfully"
+    }), 200
+
+
+@tasks_bp.route("/api/user/<email>", methods=["GET"])
+def get_user_by_email(email):
+
+    response = requests.get(
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{email}&select=*",
+        headers=HEADERS
+    )
+
+    users = response.json()
+
+    if len(users) == 0:
+
+        return jsonify({
+            "role": "user"
+        }), 404
+
+    return jsonify(users[0]), 200
 
 
 @tasks_bp.route("/api/tasks", methods=["POST"])
@@ -134,7 +184,14 @@ def create_task():
         }
     )
 
-    created_task = response.json()[0]
+    response_data = response.json()
+
+    if isinstance(response_data, list):
+     created_task = response_data[0]
+    else:
+     return jsonify({
+        "error": response_data
+    }), 500
 
     create_audit_log(
         "task_created",
@@ -223,16 +280,39 @@ def update_task_status(task_id):
     if status == "submitted":
 
         images_response = requests.get(
-            f"{SUPABASE_URL}/rest/v1/generated_images?task_id=eq.{task_id}&select=id",
+            f"{SUPABASE_URL}/rest/v1/generated_images?task_id=eq.{task_id}&select=id,image_type",
             headers=HEADERS
         )
 
         images = images_response.json()
 
-        if len(images) < 8:
+        required_types = [
+            "white_bg",
+            "theme_marble",
+            "theme_velvet",
+            "creative_beach",
+            "creative_luxury",
+            "model_front",
+            "model_side",
+            "model_closeup"
+        ]
+
+        generated_types = [
+            image["image_type"]
+            for image in images
+        ]
+
+        missing_types = [
+            image_type
+            for image_type in required_types
+            if image_type not in generated_types
+        ]
+
+        if len(missing_types) > 0:
 
             return jsonify({
-                "error": "Please generate all 8 required images."
+                "error": "Missing required image types",
+                "missing": missing_types
             }), 400
 
     requests.patch(
@@ -323,48 +403,82 @@ def generate_single_image(task_id, image_type, job_id):
         output = replicate.run(
             "black-forest-labs/flux-kontext-pro",
             input={
-    "input_image": product_image_url,
+                "input_image": product_image_url,
 
-    "prompt": (
-    "Use the provided reference image as the MAIN subject. "
-    "Preserve the exact same object identity, shape, structure, texture, material, engravings, proportions, and details. "
-    "Do NOT replace the object with another product. "
-    "Do NOT redesign or reinterpret the item. "
-    "Only modify camera angle, lighting, pose, or background according to the request. "
-    + full_prompt
-),
-    
-    "prompt_strength": 0.01 if image_type == "white_bg" else 0.12,
+                "prompt": (
+                    "Use the provided reference image as the MAIN subject. "
+                    "Preserve the exact same object identity, shape, structure, texture, material, engravings, proportions, and details. "
+                    "Do NOT replace the object with another product. "
+                    "Do NOT redesign or reinterpret the item. "
+                    "Only modify camera angle, lighting, pose, or background according to the request. "
+                    + full_prompt
+                ),
 
-    "aspect_ratio": "1:1",
-    "output_format": "png",
-    "safety_tolerance": 2
-}
+                "prompt_strength": (
+                    0.01 if image_type == "white_bg" else 0.12
+                ),
+
+                "aspect_ratio": "1:1",
+                "output_format": "png",
+                "safety_tolerance": 2
+            }
         )
 
         generated_image_url = output.url
 
-        image_response = requests.get(generated_image_url)
+        image_response = requests.get(
+            generated_image_url
+        )
 
         generated_bytes = image_response.content
 
-        os.makedirs("generated", exist_ok=True)
+        file_name = (
+            f"{task_id}_{image_type}_{uuid.uuid4()}.png"
+        )
 
-        generated_path = f"generated/{task_id}_{image_type}.png"
+        upload_response = requests.post(
+            f"{SUPABASE_URL}/storage/v1/object/generated-images/{file_name}",
+            headers={
+                "Authorization": (
+                    f"Bearer {os.getenv('SUPABASE_SERVICE_ROLE_KEY')}"
+                ),
 
-        with open(generated_path, "wb") as f:
+                "apikey": os.getenv(
+                    "SUPABASE_SERVICE_ROLE_KEY"
+                ),
 
-            f.write(generated_bytes)
+                "x-upsert": "true"
+            },
 
-        local_image_url = (
-            f"http://127.0.0.1:5000/generated/"
-            f"{task_id}_{image_type}.png"
+            files={
+                "file": (
+                    file_name,
+                    generated_bytes,
+                    "image/png"
+                )
+            }
+        )
+
+        if upload_response.status_code >= 400:
+
+            print(upload_response.text)
+
+            jobs[job_id] = {
+                "status": "failed",
+                "error": "Failed to upload image to Supabase Storage"
+            }
+
+            return
+
+        public_url = (
+            f"{SUPABASE_URL}/storage/v1/object/public/"
+            f"generated-images/{file_name}"
         )
 
         payload = {
             "task_id": task_id,
             "image_type": image_type,
-            "image_url": local_image_url,
+            "image_url": public_url,
             "angle": image_type.replace("model_", ""),
             "prompt_used": full_prompt
         }

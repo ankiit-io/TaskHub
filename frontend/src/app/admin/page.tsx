@@ -79,7 +79,7 @@ export default function AdminPage() {
 
   async function fetchTasks() {
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/tasks");
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/tasks`);
 
       const data = await response.json();
 
@@ -91,7 +91,7 @@ export default function AdminPage() {
 
   async function fetchUsers() {
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/users");
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/users`);
 
       const data = await response.json();
 
@@ -126,7 +126,7 @@ export default function AdminPage() {
       }
 
       // then create task
-      const response = await fetch("http://127.0.0.1:5000/api/tasks", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/tasks`, {
         method: "POST",
 
         headers: {

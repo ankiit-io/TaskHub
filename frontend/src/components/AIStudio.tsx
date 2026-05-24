@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+
+import GallerySkeleton from "@/components/skeletons/GallerySkeleton";
 
 interface AIStudioProps {
   taskId: string;
@@ -17,20 +19,38 @@ interface Generation {
   angle?: string;
 }
 
+const REQUIRED_TYPES = [
+  "white_bg",
+  "theme_marble",
+  "theme_velvet",
+  "creative_beach",
+  "creative_luxury",
+  "model_front",
+  "model_side",
+  "model_closeup",
+];
+
 export default function AIStudio({
   taskId,
   productImage,
   taskStatus,
 }: AIStudioProps) {
   const [generations, setGenerations] = useState<Generation[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
+
+  const [galleryLoading, setGalleryLoading] = useState(true);
+
+  const [loadingType, setLoadingType] = useState<string | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
+
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const isLocked = taskStatus === "submitted" || taskStatus === "accepted";
 
   const fetchGenerations = async () => {
     try {
+      setGalleryLoading(true);
+
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/tasks/${taskId}/generations`,
       );
@@ -38,15 +58,28 @@ export default function AIStudio({
       const data = await res.json();
 
       setGenerations(data);
-      setProgress(data.length);
     } catch (error) {
       console.log(error);
+    } finally {
+      setGalleryLoading(false);
     }
   };
 
   useEffect(() => {
     fetchGenerations();
   }, []);
+
+  const generatedTypes = useMemo(() => {
+    return generations.map((img) => img.image_type);
+  }, [generations]);
+
+  const missingTypes = REQUIRED_TYPES.filter(
+    (type) => !generatedTypes.includes(type),
+  );
+
+  const progress = REQUIRED_TYPES.filter((type) =>
+    generatedTypes.includes(type),
+  ).length;
 
   const pollJobStatus = (jobId: string) => {
     const interval = setInterval(async () => {
@@ -60,7 +93,7 @@ export default function AIStudio({
         if (data.status === "completed") {
           clearInterval(interval);
 
-          setLoading(false);
+          setLoadingType(null);
 
           fetchGenerations();
 
@@ -70,7 +103,7 @@ export default function AIStudio({
         if (data.status === "failed") {
           clearInterval(interval);
 
-          setLoading(false);
+          setLoadingType(null);
 
           toast.error(data.error || "Generation failed");
         }
@@ -82,7 +115,7 @@ export default function AIStudio({
 
   const generateImages = async (type: string) => {
     try {
-      setLoading(true);
+      setLoadingType(type);
 
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/tasks/${taskId}/generate`,
@@ -103,7 +136,9 @@ export default function AIStudio({
 
       if (!res.ok) {
         toast.error(data.error || "Generation failed");
-        setLoading(false);
+
+        setLoadingType(null);
+
         return;
       }
 
@@ -113,7 +148,7 @@ export default function AIStudio({
 
       toast.error("Something went wrong");
 
-      setLoading(false);
+      setLoadingType(null);
     }
   };
 
@@ -134,14 +169,46 @@ export default function AIStudio({
           method: "PATCH",
         },
       );
+
+      toast.success("Final image selected");
     } catch (error) {
       console.log(error);
     }
   };
 
+  const deleteGeneration = async (generationId: string) => {
+    if (isLocked) return;
+
+    const previous = generations;
+
+    setGenerations((prev) => prev.filter((img) => img.id !== generationId));
+
+    try {
+      await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/generations/${generationId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      toast.success("Image deleted");
+    } catch (error) {
+      console.log(error);
+
+      setGenerations(previous);
+
+      toast.error("Failed to delete image");
+    }
+  };
+
   const submitTask = async () => {
-    if (progress < 8) {
-      toast.error("Please generate all 8 required images.");
+    if (missingTypes.length > 0) {
+      toast.error(
+        `Missing: ${missingTypes
+          .map((type) => type.replaceAll("_", " "))
+          .join(", ")}`,
+      );
+
       return;
     }
 
@@ -167,6 +234,7 @@ export default function AIStudio({
 
       if (!res.ok) {
         toast.error(data.error || "Submission failed");
+
         return;
       }
 
@@ -175,100 +243,119 @@ export default function AIStudio({
       window.location.reload();
     } catch (error) {
       console.log(error);
+
       toast.error("Something went wrong");
     } finally {
       setSubmitting(false);
     }
   };
 
+  function renderGenerateButton(label: string, type: string) {
+    const exists = generatedTypes.includes(type);
+
+    return (
+      <button
+        disabled={!!loadingType || isLocked}
+        onClick={() => generateImages(type)}
+        className={`px-4 py-2 rounded-xl text-white transition-all duration-200 active:scale-95 ${
+          exists
+            ? "bg-green-600 hover:bg-green-700"
+            : "bg-black hover:bg-gray-700"
+        } disabled:opacity-50 disabled:cursor-not-allowed`}
+      >
+        {loadingType === type ? "Generating..." : exists ? `✓ ${label}` : label}
+      </button>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Product Preview */}
-      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-4">
-        <h2 className="text-xl font-semibold mb-4">Product Preview</h2>
+      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-5">
+        <h2 className="text-2xl font-semibold mb-5">Product Preview</h2>
 
         <img
           src={productImage}
           alt="Product"
-          className="w-64 rounded-xl border"
+          className="w-72 rounded-2xl border border-white/10"
         />
       </div>
 
-      {/* Controls */}
-      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-4">
-        <h2 className="text-xl font-semibold mb-4">Generate Images</h2>
+      {/* Generate Controls */}
+      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-5">
+        <h2 className="text-2xl font-semibold mb-5">Generate Images</h2>
 
         <div className="flex flex-wrap gap-3">
-          <button
-            disabled={loading || isLocked}
-            onClick={() => generateImages("white_bg")}
-            className="bg-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 hover:cursor-pointer transition-all duration-200 active:scale-95 text-white px-4 py-2 rounded-xl"
-          >
-            White BG
-          </button>
+          {renderGenerateButton("White BG", "white_bg")}
 
-          <button
-            disabled={loading || isLocked}
-            onClick={() => generateImages("theme_marble")}
-            className="bg-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 hover:cursor-pointer transition-all duration-200 active:scale-95 text-white px-4 py-2 rounded-xl"
-          >
-            Theme
-          </button>
+          {renderGenerateButton("Theme Marble", "theme_marble")}
 
-          <button
-            disabled={loading || isLocked}
-            onClick={() => generateImages("creative_beach")}
-            className="bg-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 hover:cursor-pointer transition-all duration-200 active:scale-95 text-white px-4 py-2 rounded-xl"
-          >
-            Creative
-          </button>
+          {renderGenerateButton("Theme Velvet", "theme_velvet")}
 
-          <button
-            disabled={loading || isLocked}
-            onClick={() => generateImages("model_front")}
-            className="bg-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 hover:cursor-pointer transition-all duration-200 active:scale-95 text-white px-4 py-2 rounded-xl"
-          >
-            Model Front
-          </button>
+          {renderGenerateButton("Creative Beach", "creative_beach")}
 
-          <button
-            disabled={loading || isLocked}
-            onClick={() => generateImages("model_side")}
-            className="bg-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 hover:cursor-pointer transition-all duration-200 active:scale-95 text-white px-4 py-2 rounded-xl"
-          >
-            Model Side
-          </button>
+          {renderGenerateButton("Creative Luxury", "creative_luxury")}
 
-          <button
-            disabled={loading || isLocked}
-            onClick={() => generateImages("model_closeup")}
-            className="bg-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 hover:cursor-pointer transition-all duration-200 active:scale-95 text-white px-4 py-2 rounded-xl"
-          >
-            Model Closeup
-          </button>
+          {renderGenerateButton("Model Front", "model_front")}
+
+          {renderGenerateButton("Model Side", "model_side")}
+
+          {renderGenerateButton("Model Closeup", "model_closeup")}
         </div>
 
-        {loading && (
-          <div className="mt-4 flex items-center gap-2">
+        {loadingType && (
+          <div className="mt-5 flex items-center gap-3">
             <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
 
-            <p className="text-sm text-gray-400">Generating AI images...</p>
+            <p className="text-sm text-gray-400">Generating AI image...</p>
           </div>
         )}
       </div>
 
       {/* Progress */}
-      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-4">
-        <h2 className="text-xl font-semibold mb-2">Progress</h2>
+      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-2xl font-semibold">Progress</h2>
 
-        <p className="text-gray-400">{progress}/8 images generated</p>
+          <span className="text-lg font-medium">{progress}/8</span>
+        </div>
 
-        <div className="mt-4">
+        <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
+          <div
+            className="bg-green-500 h-full transition-all duration-500"
+            style={{
+              width: `${(progress / 8) * 100}%`,
+            }}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-6">
+          {REQUIRED_TYPES.map((type) => {
+            const completed = generatedTypes.includes(type);
+
+            return (
+              <div
+                key={type}
+                className={`rounded-xl border p-3 ${
+                  completed
+                    ? "border-green-500/30 bg-green-500/10"
+                    : "border-white/10 bg-white/5"
+                }`}
+              >
+                <p className="capitalize text-sm">
+                  {completed ? "✅" : "❌"} {type.replaceAll("_", " ")}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-6">
           <button
-            disabled={progress < 8 || submitting || isLocked}
+            disabled={missingTypes.length > 0 || submitting || isLocked}
             onClick={submitTask}
-            className={`px-5 py-2 rounded-xl text-white transition-all duration-200 active:scale-95 ${
-              progress < 8 || submitting || isLocked
+            className={`px-5 py-3 rounded-2xl text-white transition-all duration-200 active:scale-95 ${
+              missingTypes.length > 0 || submitting || isLocked
                 ? "bg-gray-500 cursor-not-allowed"
                 : "bg-green-600 hover:bg-green-700"
             }`}
@@ -285,44 +372,51 @@ export default function AIStudio({
       </div>
 
       {/* Gallery */}
-      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-4">
-        <h2 className="text-xl font-semibold mb-4">Generated Gallery</h2>
+      <div className="border border-white/10 bg-white/5 backdrop-blur-sm rounded-2xl p-5">
+        <h2 className="text-2xl font-semibold mb-5">Generated Gallery</h2>
 
-        {generations.length === 0 ? (
-          <div className="py-10 text-center text-gray-500">
+        {galleryLoading ? (
+          <GallerySkeleton />
+        ) : generations.length === 0 ? (
+          <div className="py-16 text-center text-gray-500 border border-dashed border-white/10 rounded-2xl">
             Generate AI images to start building your gallery.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {generations.map((image) => (
               <div
                 key={image.id}
-                className={`group border rounded-xl p-3 overflow-hidden transition-all duration-200 hover:border-gray-500 ${
+                className={`group border rounded-2xl overflow-hidden transition-all duration-200 hover:border-gray-500 ${
                   image.is_final
-                    ? "border-green-500 ring-2 ring-green-500/30 shadow-lg shadow-green-500/20"
-                    : ""
+                    ? "border-green-500 ring-2 ring-green-500/30"
+                    : "border-white/10"
                 }`}
               >
                 <img
                   src={image.image_url}
                   alt={image.image_type}
-                  className="w-full h-48 object-cover rounded-lg group-hover:scale-[1.02] transition-all duration-300"
+                  onClick={() => setSelectedImage(image.image_url)}
+                  className="w-full h-64 object-cover cursor-pointer group-hover:scale-[1.02] transition-all duration-300"
                 />
 
-                <div className="mt-3">
-                  <p className="font-medium capitalize">{image.image_type}</p>
+                <div className="p-4">
+                  <p className="font-medium capitalize">
+                    {image.image_type.replaceAll("_", " ")}
+                  </p>
 
                   {image.is_final && (
-                    <p className="text-green-500 text-sm mt-1">Final Image</p>
+                    <p className="text-green-500 text-sm mt-2">
+                      Final Selected
+                    </p>
                   )}
 
-                  <div className="flex gap-2 mt-3">
+                  <div className="flex gap-2 mt-4">
                     <button
                       disabled={isLocked}
                       onClick={() => markAsFinal(image.id)}
-                      className={`px-3 py-1 rounded-lg text-sm transition-all duration-200 active:scale-95 ${
+                      className={`px-3 py-2 rounded-lg text-sm transition-all duration-200 active:scale-95 ${
                         image.is_final
-                          ? "bg-green-500 text-white"
+                          ? "bg-green-600 text-white"
                           : "bg-gray-800 hover:bg-gray-700 text-white"
                       }`}
                     >
@@ -331,27 +425,8 @@ export default function AIStudio({
 
                     <button
                       disabled={isLocked}
-                      onClick={async () => {
-                        if (isLocked) return;
-
-                        setGenerations((prev) =>
-                          prev.filter((item) => item.id !== image.id),
-                        );
-
-                        setProgress((prev) => prev - 1);
-
-                        try {
-                          await fetch(
-                            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/generations/${image.id}`,
-                            {
-                              method: "DELETE",
-                            },
-                          );
-                        } catch (error) {
-                          console.log(error);
-                        }
-                      }}
-                      className={`px-3 py-1 rounded-lg text-sm transition-all duration-200 ${
+                      onClick={() => deleteGeneration(image.id)}
+                      className={`px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
                         isLocked
                           ? "bg-gray-500 cursor-not-allowed text-white"
                           : "bg-red-500 hover:bg-red-600 active:scale-95 text-white"
@@ -366,6 +441,20 @@ export default function AIStudio({
           </div>
         )}
       </div>
+
+      {/* Fullscreen Preview */}
+      {selectedImage && (
+        <div
+          onClick={() => setSelectedImage(null)}
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-6"
+        >
+          <img
+            src={selectedImage}
+            alt="Preview"
+            className="max-w-6xl max-h-[90vh] rounded-2xl"
+          />
+        </div>
+      )}
     </div>
   );
 }
