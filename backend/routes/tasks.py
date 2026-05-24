@@ -650,3 +650,150 @@ def request_revision(task_id):
     return jsonify({
         "message": "Revision requested"
     }), 200
+    
+@tasks_bp.route("/api/tasks/<task_id>", methods=["PUT"])
+def update_task(task_id):
+
+    data = request.json
+
+    response = requests.patch(
+        f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{task_id}",
+        headers={
+            **HEADERS,
+            "Prefer": "return=representation"
+        },
+        json={
+            "title": data.get("title"),
+            "description": data.get("description"),
+            "assigned_to": data.get("assigned_to"),
+            "feedback_note": data.get("feedback_note"),
+            "product_image_url": data.get("product_image_url"),
+        }
+    )
+
+    return jsonify(response.json()), 200
+
+
+@tasks_bp.route("/api/tasks/<task_id>", methods=["DELETE"])
+def delete_task(task_id):
+
+    try:
+
+        # GET TASK
+
+        task_response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{task_id}&select=*",
+            headers=HEADERS,
+        )
+
+        task_data = task_response.json()
+
+        if len(task_data) == 0:
+
+            return jsonify({
+                "error": "Task not found"
+            }), 404
+
+        task = task_data[0]
+
+        # DELETE ORIGINAL TASK IMAGE
+
+        original_image = task.get(
+            "product_image_url"
+        )
+
+        if original_image and "task-image/" in original_image:
+
+            original_file_name = (
+                original_image.split(
+                    "task-image/"
+                )[1]
+            )
+
+            requests.delete(
+                f"{SUPABASE_URL}/storage/v1/object/task-image/{original_file_name}",
+                headers={
+                    "Authorization":
+                        f"Bearer {os.getenv('SUPABASE_SERVICE_ROLE_KEY')}",
+
+                    "apikey":
+                        os.getenv(
+                            "SUPABASE_SERVICE_ROLE_KEY"
+                        ),
+                },
+            )
+
+        # GET GENERATED IMAGES
+
+        images_response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/generated_images?task_id=eq.{task_id}&select=*",
+            headers=HEADERS,
+        )
+
+        generated_images = (
+            images_response.json()
+        )
+
+        # DELETE GENERATED STORAGE FILES
+
+        for image in generated_images:
+
+            image_url = image.get(
+                "image_url"
+            )
+
+            if (
+                image_url
+                and "generated-images/" in image_url
+            ):
+
+                file_name = image_url.split(
+                    "generated-images/"
+                )[1]
+
+                requests.delete(
+                    f"{SUPABASE_URL}/storage/v1/object/generated-images/{file_name}",
+                    headers={
+                        "Authorization":
+                            f"Bearer {os.getenv('SUPABASE_SERVICE_ROLE_KEY')}",
+
+                        "apikey":
+                            os.getenv(
+                                "SUPABASE_SERVICE_ROLE_KEY"
+                            ),
+                    },
+                )
+
+        # DELETE GENERATED IMAGES ROWS
+
+        requests.delete(
+            f"{SUPABASE_URL}/rest/v1/generated_images?task_id=eq.{task_id}",
+            headers=HEADERS,
+        )
+
+        # DELETE AUDIT LOGS
+
+        requests.delete(
+            f"{SUPABASE_URL}/rest/v1/audit_logs?record_id=eq.{task_id}",
+            headers=HEADERS,
+        )
+
+        # DELETE TASK
+
+        requests.delete(
+            f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{task_id}",
+            headers=HEADERS,
+        )
+
+        return jsonify({
+            "message":
+                "Task and related files deleted successfully"
+        }), 200
+
+    except Exception as e:
+
+        print("DELETE TASK ERROR:", str(e))
+
+        return jsonify({
+            "error": str(e)
+        }), 500
