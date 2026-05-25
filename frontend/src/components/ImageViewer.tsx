@@ -2,8 +2,7 @@
 
 import AppModal from "@/components/AppModal";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
-
+import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 interface Props {
   open: boolean;
   image: string | null;
@@ -32,6 +31,12 @@ export default function ImageViewer({
       className="max-w-7xl overflow-hidden"
     >
       <div className="relative bg-black rounded-[32px] overflow-hidden">
+        <a
+          href={`${image}?download=generated-image.png`}
+          className="absolute top-5 right-5 z-20 h-12 w-12 rounded-full bg-black/70 hover:bg-black backdrop-blur-sm flex items-center justify-center transition-all"
+        >
+          <Download className="h-5 w-5" />
+        </a>
         {images.length > 1 && onPrev && (
           <button
             onClick={onPrev}

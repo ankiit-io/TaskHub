@@ -1,0 +1,12 @@
+Flask
+flask-cors
+flask-limiter
+python-dotenv
+requests
+supabase
+celery
+redis
+replicate
+resend
+gunicorn
+secure-smtplib

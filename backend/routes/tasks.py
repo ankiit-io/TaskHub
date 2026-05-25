@@ -1,14 +1,16 @@
 from flask import Blueprint, request, jsonify
-import threading
-import uuid
 import requests
 import os
+from celery_app import celery
 
+from worker import generate_ai_image
 import replicate
 
 from extensions import limiter
 
 from services.email_services import (
+    send_task_accepted_email,
+    send_task_assigned_email,
     send_task_submitted_email
 )
 
@@ -19,66 +21,10 @@ from services.supabase_client import (
 
 tasks_bp = Blueprint("tasks", __name__)
 
-jobs = {}
 
 client = replicate.Client(
     api_key=os.getenv("REPLICATE_API_TOKEN")
 )
-
-PROMPTS = {
-
-    "white_bg": (
-        "Place the SAME exact object from the reference image "
-        "on a pure white seamless ecommerce studio background. "
-        "Keep identical object identity, structure, texture, proportions, "
-        "details, engravings, reflections, and material. "
-        "Centered composition with soft studio shadows."
-    ),
-
-    "theme_marble": (
-        "Place the SAME exact object on elegant luxury marble surface. "
-        "Premium luxury commercial photography aesthetic. "
-        "Preserve all object details exactly."
-    ),
-
-    "theme_velvet": (
-        "Place the SAME exact object on royal velvet luxury background. "
-        "Dark cinematic premium lighting. "
-        "Preserve exact object identity and details."
-    ),
-
-    "creative_beach": (
-        "Place the SAME exact object in a luxury beach sunset scene. "
-        "Golden hour cinematic lighting. "
-        "Preserve exact object identity and details."
-    ),
-
-    "creative_luxury": (
-        "Luxury premium commercial photoshoot of the SAME exact object. "
-        "Elegant expensive aesthetic. "
-        "Preserve all object details exactly."
-    ),
-
-    "model_front": (
-        "Front-facing product photography of the SAME exact object. "
-        "Camera directly facing the object. "
-        "Professional studio lighting. "
-        "Preserve exact shape, structure, details, and texture."
-    ),
-
-    "model_side": (
-        "Side-angle product photography of the SAME exact object. "
-        "45-degree side perspective. "
-        "Professional studio lighting. "
-        "Preserve exact object structure and details."
-    ),
-
-    "model_closeup": (
-        "Macro close-up product photography of the SAME exact object. "
-        "Focus on intricate details and texture. "
-        "Highly detailed professional commercial photography."
-    )
-}
 
 
 def create_audit_log(action, task_id, user_id=None):
@@ -206,6 +152,30 @@ def create_task():
         created_task["id"],
         assigned_to
     )
+    
+    user_response = requests.get(
+        f"{SUPABASE_URL}/rest/v1/users?id=eq.{assigned_to}&select=*",
+        headers=HEADERS
+    )
+
+    users = user_response.json()
+
+    if len(users) > 0:
+
+        user = users[0]
+
+    try:
+
+        send_task_assigned_email(
+            user["email"],
+            user["name"],
+            created_task["title"],
+            created_task["id"]
+       )
+
+    except Exception as e:
+
+        print("EMAIL ERROR:", str(e))
 
     return jsonify({
         "message": "Task created successfully",
@@ -450,147 +420,6 @@ def update_task_status(task_id):
     }), 200
 
 
-def generate_single_image(task_id, image_type, job_id):
-
-    jobs[job_id] = {
-        "status": "processing"
-    }
-
-    try:
-
-        prompt = PROMPTS.get(image_type)
-
-        if not prompt:
-
-            jobs[job_id] = {
-                "status": "failed",
-                "error": "Invalid image type"
-            }
-
-            return
-
-        task_response = requests.get(
-            f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{task_id}&select=*",
-            headers=HEADERS
-        )
-
-        task = task_response.json()[0]
-
-        product_image_url = task["product_image_url"]
-
-        print("Generating:", image_type)
-
-        full_prompt = (
-            "Luxury commercial product photography. "
-            "Ultra realistic DSLR quality. "
-            "Premium advertising aesthetic. "
-            + prompt
-        )
-
-        output = replicate.run(
-            "black-forest-labs/flux-kontext-pro",
-            input={
-                "input_image": product_image_url,
-
-                "prompt": (
-                    "Use the provided reference image as the MAIN subject. "
-                    "Preserve the exact same object identity, shape, structure, texture, material, engravings, proportions, and details. "
-                    "Do NOT replace the object with another product. "
-                    "Do NOT redesign or reinterpret the item. "
-                    "Only modify camera angle, lighting, pose, or background according to the request. "
-                    + full_prompt
-                ),
-
-                "prompt_strength": (
-                    0.01 if image_type == "white_bg" else 0.12
-                ),
-
-                "aspect_ratio": "1:1",
-                "output_format": "png",
-                "safety_tolerance": 2
-            }
-        )
-
-        generated_image_url = output.url
-
-        image_response = requests.get(
-            generated_image_url
-        )
-
-        generated_bytes = image_response.content
-
-        file_name = (
-            f"{task_id}_{image_type}_{uuid.uuid4()}.png"
-        )
-
-        upload_response = requests.post(
-            f"{SUPABASE_URL}/storage/v1/object/generated-images/{file_name}",
-            headers={
-                "Authorization": (
-                    f"Bearer {os.getenv('SUPABASE_SERVICE_ROLE_KEY')}"
-                ),
-
-                "apikey": os.getenv(
-                    "SUPABASE_SERVICE_ROLE_KEY"
-                ),
-
-                "x-upsert": "true"
-            },
-
-            files={
-                "file": (
-                    file_name,
-                    generated_bytes,
-                    "image/png"
-                )
-            }
-        )
-
-        if upload_response.status_code >= 400:
-
-            print(upload_response.text)
-
-            jobs[job_id] = {
-                "status": "failed",
-                "error": "Failed to upload image to Supabase Storage"
-            }
-
-            return
-
-        public_url = (
-            f"{SUPABASE_URL}/storage/v1/object/public/"
-            f"generated-images/{file_name}"
-        )
-
-        payload = {
-            "task_id": task_id,
-            "image_type": image_type,
-            "image_url": public_url,
-            "angle": image_type.replace("model_", ""),
-            "prompt_used": full_prompt
-        }
-
-        requests.post(
-            f"{SUPABASE_URL}/rest/v1/generated_images",
-            headers=HEADERS,
-            json=payload
-        )
-
-        print("Generated:", image_type)
-
-        jobs[job_id] = {
-            "status": "completed"
-        }
-
-    except Exception as e:
-
-        print("GENERATION ERROR:", str(e))
-
-        jobs[job_id] = {
-            "status": "failed",
-            "error": str(e)
-        }
-
 
 @tasks_bp.route("/api/tasks/<task_id>/generate", methods=["POST"])
 @limiter.limit("10 per hour")
@@ -606,33 +435,49 @@ def generate_images(task_id):
             "error": "image_type is required"
         }), 400
 
-    job_id = str(uuid.uuid4())
-
-    thread = threading.Thread(
-        target=generate_single_image,
-        args=(task_id, image_type, job_id)
+    task = generate_ai_image.delay(
+        task_id,
+        image_type
     )
 
-    thread.start()
-
     return jsonify({
-        "job_id": job_id
+        "job_id": task.id
     }), 202
-
 
 @tasks_bp.route("/api/jobs/<job_id>/status", methods=["GET"])
 def get_job_status(job_id):
 
-    job = jobs.get(job_id)
+    task_result = celery.AsyncResult(job_id)
+    response = {
+        "job_id": job_id,
+        "state": task_result.state,
+    }
 
-    if not job:
+    if task_result.state == "PENDING":
 
-        return jsonify({
-            "error": "Job not found"
-        }), 404
+        response["progress"] = 0
 
-    return jsonify(job), 200
+    elif task_result.state == "PROCESSING":
 
+        response["progress"] = (
+            task_result.info.get("progress", 0)
+            if task_result.info
+            else 0
+        )
+
+    elif task_result.state == "SUCCESS":
+
+        response["progress"] = 100
+
+        response["result"] = task_result.result
+
+    elif task_result.state == "FAILURE":
+
+        response["error"] = str(
+            task_result.info
+        )
+
+    return jsonify(response), 200
 
 @tasks_bp.route("/api/tasks/<task_id>/generations", methods=["GET"])
 def get_task_generations(task_id):
@@ -648,6 +493,11 @@ def get_task_generations(task_id):
 @tasks_bp.route("/api/generations/<generation_id>", methods=["DELETE"])
 def delete_generation(generation_id):
 
+    create_audit_log(
+        "image_deleted",
+        generation_id
+    )
+    
     requests.delete(
         f"{SUPABASE_URL}/rest/v1/generated_images?id=eq.{generation_id}",
         headers=HEADERS
@@ -672,6 +522,10 @@ def mark_generation_final(generation_id):
         json={
             "is_final": False
         }
+    )
+    create_audit_log(
+        "final_image_changed",
+        generation_id
     )
 
     requests.patch(
@@ -707,6 +561,31 @@ def accept_task(task_id):
         "task_accepted",
         task_id
     )
+    
+    task_response = requests.get(
+        f"{SUPABASE_URL}/rest/v1/tasks?id=eq.{task_id}&select=*",
+        headers=HEADERS
+    )
+
+    task = task_response.json()[0]
+
+    user_response = requests.get(
+        f"{SUPABASE_URL}/rest/v1/users?id=eq.{task['assigned_to']}&select=*",
+        headers=HEADERS
+    )
+
+    user = user_response.json()[0]
+
+    try:
+
+        send_task_accepted_email(
+            user["email"],
+            task["title"]
+        )
+
+    except Exception as e:
+
+        print("EMAIL ERROR:", str(e))
 
     return jsonify({
         "message": "Task accepted successfully"
@@ -775,6 +654,7 @@ def delete_task(task_id):
 
         task_data = task_response.json()
 
+           
         if len(task_data) == 0:
 
             return jsonify({

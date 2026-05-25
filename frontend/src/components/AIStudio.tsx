@@ -10,12 +10,13 @@ import StatusBadge from "@/components/StatusBadge";
 
 import {
   Check,
+  Download,
   ImageIcon,
   Maximize2,
+  RefreshCcw,
   Sparkles,
   Trash2,
   Wand2,
-  X,
 } from "lucide-react";
 
 interface AIStudioProps {
@@ -109,15 +110,23 @@ export default function AIStudio({
 
         const data = await res.json();
 
-        if (data.status === "completed") {
+        if (data.state === "PROCESSING") {
+          console.log("Processing:", data.progress);
+
+          return;
+        }
+
+        if (data.state === "SUCCESS") {
           clearInterval(interval);
 
           setLoadingType(null);
 
-          fetchGenerations();
+          await fetchGenerations();
+
+          return;
         }
 
-        if (data.status === "failed") {
+        if (data.state === "FAILURE") {
           clearInterval(interval);
 
           setLoadingType(null);
@@ -126,6 +135,12 @@ export default function AIStudio({
         }
       } catch (error) {
         console.log(error);
+
+        clearInterval(interval);
+
+        setLoadingType(null);
+
+        toast.error("Polling failed");
       }
     }, 2000);
   };
@@ -539,18 +554,50 @@ export default function AIStudio({
                     )}
                   </div>
 
-                  <button
-                    disabled={isLocked}
-                    onClick={() => deleteGeneration(image.id)}
-                    className={`h-11 w-full rounded-2xl transition-all font-medium flex items-center justify-center gap-2 ${
-                      isLocked
-                        ? "bg-gray-500 cursor-not-allowed text-white"
-                        : "bg-red-500 hover:bg-red-600 text-white"
-                    }`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete Image
-                  </button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      disabled={isLocked}
+                      onClick={() => markAsFinal(image.id)}
+                      className={`h-11 rounded-2xl transition-all font-medium flex items-center justify-center gap-2 ${
+                        image.is_final
+                          ? "bg-green-500 text-white"
+                          : "bg-white/10 hover:bg-white/15"
+                      }`}
+                    >
+                      <Check className="h-4 w-4" />
+                      Final
+                    </button>
+
+                    <a
+                      href={`${image.image_url}?download=${image.image_type}.png`}
+                      className="h-11 rounded-2xl bg-blue-500 hover:bg-blue-600 text-white transition-all font-medium flex items-center justify-center gap-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      Download
+                    </a>
+
+                    <button
+                      disabled={!!loadingType || isLocked}
+                      onClick={() => generateImages(image.image_type)}
+                      className="h-11 rounded-2xl bg-yellow-500 hover:bg-yellow-600 text-black transition-all font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <RefreshCcw className="h-4 w-4" />
+                      Regenerate
+                    </button>
+
+                    <button
+                      disabled={isLocked}
+                      onClick={() => deleteGeneration(image.id)}
+                      className={`h-11 rounded-2xl transition-all font-medium flex items-center justify-center gap-2 ${
+                        isLocked
+                          ? "bg-gray-500 cursor-not-allowed text-white"
+                          : "bg-red-500 hover:bg-red-600 text-white"
+                      }`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

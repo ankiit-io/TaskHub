@@ -1,106 +1,160 @@
-import resend
 import os
+import smtplib
+
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
-resend.api_key = os.getenv("RESEND_API_KEY")
+SMTP_EMAIL = os.getenv("SMTP_EMAIL")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL")
 
 
-def send_task_assigned_email(user_email, user_name, task_title, task_id):
+def send_email(to_email, subject, html):
 
-    resend.Emails.send({
-        "from": "TaskHub <onboarding@resend.dev>",
-        "to": [user_email],
-        "subject": f"New Task Assigned: {task_title}",
-        "html": f"""
-        <div style="font-family: Arial; padding: 20px;">
-            <h2>New Task Assigned</h2>
+    msg = MIMEMultipart()
 
-            <p>Hello {user_name},</p>
+    msg["From"] = SMTP_EMAIL
+    msg["To"] = to_email
+    msg["Subject"] = subject
 
-            <p>You have been assigned a new task.</p>
+    msg.attach(
+        MIMEText(html, "html")
+    )
 
-            <p>
-                <strong>Task:</strong> {task_title}
-            </p>
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    )
 
-            <a
-                href="{FRONTEND_URL}/dashboard/{task_id}"
-                style="
-                    background: black;
-                    color: white;
-                    padding: 10px 16px;
-                    text-decoration: none;
-                    border-radius: 6px;
-                    display: inline-block;
-                    margin-top: 10px;
-                "
-            >
-                Open Task
-            </a>
-        </div>
-        """
-    })
+    server.starttls()
+
+    server.login(
+        SMTP_EMAIL,
+        SMTP_PASSWORD
+    )
+
+    server.sendmail(
+        SMTP_EMAIL,
+        to_email,
+        msg.as_string()
+    )
+
+    server.quit()
 
 
-def send_task_submitted_email(admin_email, task_title, user_name, task_id):
+def send_task_assigned_email(
+    user_email,
+    user_name,
+    task_title,
+    task_id
+):
 
-    resend.Emails.send({
-        "from": "TaskHub <onboarding@resend.dev>",
-        "to": [admin_email],
-        "subject": f"Task Completed: {task_title} by {user_name}",
-        "html": f"""
-        <div style="font-family: Arial; padding: 20px;">
-            <h2>Task Submitted</h2>
+    html = f"""
+    <div style="font-family: Arial; padding: 20px;">
+        <h2>New Task Assigned</h2>
 
-            <p>
-                <strong>{user_name}</strong>
-                submitted the task:
-            </p>
+        <p>Hello {user_name},</p>
 
-            <p>
-                <strong>{task_title}</strong>
-            </p>
+        <p>You have been assigned a new task.</p>
 
-            <a
-                href="{FRONTEND_URL}/admin/tasks/{task_id}"
-                style="
-                    background: black;
-                    color: white;
-                    padding: 10px 16px;
-                    text-decoration: none;
-                    border-radius: 6px;
-                    display: inline-block;
-                    margin-top: 10px;
-                "
-            >
-                Review Task
-            </a>
-        </div>
-        """
-    })
+        <p>
+            <strong>Task:</strong> {task_title}
+        </p>
+
+        <a
+            href="{FRONTEND_URL}/dashboard/{task_id}"
+            style="
+                background: black;
+                color: white;
+                padding: 10px 16px;
+                text-decoration: none;
+                border-radius: 6px;
+                display: inline-block;
+                margin-top: 10px;
+            "
+        >
+            Open Task
+        </a>
+    </div>
+    """
+
+    send_email(
+        user_email,
+        f"New Task Assigned: {task_title}",
+        html
+    )
 
 
-def send_task_accepted_email(user_email, task_title):
+def send_task_submitted_email(
+    admin_email,
+    task_title,
+    user_name,
+    task_id
+):
 
-    resend.Emails.send({
-        "from": "TaskHub <onboarding@resend.dev>",
-        "to": [user_email],
-        "subject": f"Task Accepted: {task_title}",
-        "html": f"""
-        <div style="font-family: Arial; padding: 20px;">
-            <h2>Task Accepted</h2>
+    html = f"""
+    <div style="font-family: Arial; padding: 20px;">
+        <h2>Task Submitted</h2>
 
-            <p>Your task has been accepted successfully.</p>
+        <p>
+            <strong>{user_name}</strong>
+            submitted the task:
+        </p>
 
-            <p>
-                <strong>{task_title}</strong>
-            </p>
+        <p>
+            <strong>{task_title}</strong>
+        </p>
 
-            <p>Great work 🚀</p>
-        </div>
-        """
-    })
+        <a
+            href="{FRONTEND_URL}/admin/tasks/{task_id}"
+            style="
+                background: black;
+                color: white;
+                padding: 10px 16px;
+                text-decoration: none;
+                border-radius: 6px;
+                display: inline-block;
+                margin-top: 10px;
+            "
+        >
+            Review Task
+        </a>
+    </div>
+    """
+
+    send_email(
+        admin_email,
+        f"Task Completed: {task_title}",
+        html
+    )
+
+
+def send_task_accepted_email(
+    user_email,
+    task_title
+):
+
+    html = f"""
+    <div style="font-family: Arial; padding: 20px;">
+        <h2>Task Accepted</h2>
+
+        <p>Your task has been accepted successfully.</p>
+
+        <p>
+            <strong>{task_title}</strong>
+        </p>
+
+        <p>Great work 🚀</p>
+    </div>
+    """
+
+    send_email(
+        user_email,
+        f"Task Accepted: {task_title}",
+        html
+    )
