@@ -1,3 +1,5 @@
+import threading
+
 from flask import Blueprint, request, jsonify
 import requests
 import os
@@ -162,20 +164,26 @@ def create_task():
 
     if len(users) > 0:
 
-        user = users[0]
+       user = users[0]
 
-    try:
+       def send_email_background():
 
-        send_task_assigned_email(
-            user["email"],
-            user["name"],
-            created_task["title"],
-            created_task["id"]
-       )
+        try:
 
-    except Exception as e:
+            send_task_assigned_email(
+                user["email"],
+                user["name"],
+                created_task["title"],
+                created_task["id"]
+            )
 
-        print("EMAIL ERROR:", str(e))
+        except Exception as e:
+
+            print("EMAIL ERROR:", str(e))
+
+    threading.Thread(
+        target=send_email_background
+    ).start()
 
     return jsonify({
         "message": "Task created successfully",
