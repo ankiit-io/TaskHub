@@ -166,25 +166,21 @@ def create_task():
 
        user = users[0]
 
-    def send_email_background():
+       def send_email_background():
 
-        print("STARTING EMAIL SEND")
+        try:
 
-    try:
+            send_task_assigned_email(
+                user["email"],
+                user["name"],
+                created_task["title"],
+                created_task["id"]
+            )
 
-        send_task_assigned_email(
-            user["email"],
-            user["name"],
-            created_task["title"],
-            created_task["id"]
-        )
+        except Exception as e:
 
-        print("EMAIL SENT SUCCESSFULLY")
+            print("EMAIL ERROR:", str(e))
 
-    except Exception as e:
-
-        print("EMAIL FAILED:", str(e))
-    
     threading.Thread(
         target=send_email_background
     ).start()
