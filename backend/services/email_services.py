@@ -14,6 +14,28 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
 
 
+def create_server():
+
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587,
+        timeout=30
+    )
+
+    server.ehlo()
+
+    server.starttls()
+
+    server.ehlo()
+
+    server.login(
+        SMTP_EMAIL,
+        SMTP_PASSWORD
+    )
+
+    return server
+
+
 def send_email(to_email, subject, html):
 
     msg = MIMEMultipart()
@@ -26,17 +48,7 @@ def send_email(to_email, subject, html):
         MIMEText(html, "html")
     )
 
-    server = smtplib.SMTP(
-        "smtp.gmail.com",
-        587
-    )
-
-    server.starttls()
-
-    server.login(
-        SMTP_EMAIL,
-        SMTP_PASSWORD
-    )
+    server = create_server()
 
     server.sendmail(
         SMTP_EMAIL,
@@ -44,7 +56,13 @@ def send_email(to_email, subject, html):
         msg.as_string()
     )
 
-    server.quit()
+    try:
+
+        server.quit()
+
+    except:
+
+        pass
 
 
 def send_task_assigned_email(
