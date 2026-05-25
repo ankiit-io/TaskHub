@@ -8,39 +8,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SMTP_EMAIL = os.getenv("SMTP_EMAIL")
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT"))
+
+SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL")
-
-
-def create_server():
-
-    server = smtplib.SMTP(
-        "smtp.gmail.com",
-        587,
-        timeout=30
-    )
-
-    server.ehlo()
-
-    server.starttls()
-
-    server.ehlo()
-
-    server.login(
-        SMTP_EMAIL,
-        SMTP_PASSWORD
-    )
-
-    return server
 
 
 def send_email(to_email, subject, html):
 
     msg = MIMEMultipart()
 
-    msg["From"] = SMTP_EMAIL
+    msg["From"] = SMTP_USER
     msg["To"] = to_email
     msg["Subject"] = subject
 
@@ -48,21 +29,25 @@ def send_email(to_email, subject, html):
         MIMEText(html, "html")
     )
 
-    server = create_server()
+    server = smtplib.SMTP(
+        SMTP_HOST,
+        SMTP_PORT
+    )
+
+    server.starttls()
+
+    server.login(
+        SMTP_USER,
+        SMTP_PASSWORD
+    )
 
     server.sendmail(
-        SMTP_EMAIL,
+        SMTP_USER,
         to_email,
         msg.as_string()
     )
 
-    try:
-
-        server.quit()
-
-    except:
-
-        pass
+    server.quit()
 
 
 def send_task_assigned_email(
